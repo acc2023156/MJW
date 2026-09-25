@@ -1,0 +1,59 @@
+:root {
+  font-family: Arial, sans-serif;
+  background: #173f2f;
+  color: #fff;
+  --viewport-width: 100vw;
+  --viewport-height: 100dvh;
+}
+* { box-sizing: border-box; }
+html, body {
+  width: 100%;
+  height: 100%;
+  min-height: 100dvh;
+  margin: 0;
+  overflow: hidden;
+}
+body {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 34%, #b12c16 0%, #68140d 48%, #2b0807 100%);
+}
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at center, transparent 20%, rgba(4, 34, 23, .22) 100%);
+}
+#app {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  width: min(var(--viewport-width), calc(var(--viewport-height) * 445 / 738));
+  aspect-ratio: 445 / 738;
+  background: #572718;
+  box-shadow: 0 0 42px rgba(33, 8, 2, .72);
+  overflow: hidden;
+}
+canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  touch-action: none;
+  user-select: none;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 45%, transparent 20%, rgba(35, 0, 0, .28) 100%);
+}
+
+/* Keep the artwork's native proportions at every viewport size. */
