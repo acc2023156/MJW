@@ -1,4 +1,4 @@
-// Supplied timeline tables, 2026-09-25. All offsets/durations are milliseconds.
+// All offsets/durations are milliseconds. SFX timings are UNVERIFIED EXAMPLES.
 // Source sheet: audio gid 1673875040; voice gid 465280746.
 export const soundSprites = {
   bgm_main: [0, 8060], win_jingle: [8100, 1900], ui_click: [10050, 150],
@@ -13,15 +13,17 @@ export const soundSprites = {
 } as const
 
 export const voiceSprites = {
-  hu: [0, 1880], multiplier_sequence: [1900, 4700], bamboo_two: [6650, 800],
-  bamboo_one: [7500, 850], bamboo_five: [8400, 900], bamboo_special: [9350, 1200],
-  eight_white_sequence: [10600, 1750], green_dragon: [12400, 750],
-  red_dragon: [13200, 850], all_match_female: [14100, 1100],
-  all_match_male: [15250, 1050], look_cards: [16350, 1650],
-  hurry: [18050, 1800], request_eat: [19900, 1400], taunt: [21350, 1150],
-  ready_hand: [22550, 1500], hurry_dialect: [24100, 1500],
-  self_draw: [25650, 1050], comment_dialect: [26750, 1350],
-  joke_dialect: [28150, 2750], long_taunt: [30950, 3950],
+  hu: [0, 2490], multiplier_2: [2920, 780], multiplier_3: [3920, 780],
+  multiplier_4: [4920, 880], multiplier_6: [5920, 950],
+  multiplier_10: [6920, 1040], multiplier_5: [7980, 710],
+  bamboo_two: [9000, 810], dots_two: [9960, 920], bamboo_five: [11000, 770],
+  dots_five: [11970, 1520], eight: [14040, 850], white: [15000, 1120],
+  green_dragon: [17000, 590], red_dragon: [18000, 1170],
+  all_match_female: [19950, 1330], all_match_male: [21940, 1220],
+  look_cards: [23870, 2800], hurry: [27000, 2950], request_eat: [30000, 2030],
+  taunt: [32050, 1730], ready_hand: [34050, 2750], hurry_dialect: [36920, 1750],
+  self_draw: [38950, 1750], comment_dialect: [40950, 1910],
+  joke_dialect: [42970, 3320], long_taunt: [46900, 2890], final_taunt: [49950, 3050],
 } as const
 
 export type SoundName = keyof typeof soundSprites

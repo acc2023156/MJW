@@ -141,7 +141,7 @@ export class GameScene extends Container {
         this.setMultiplier(multiplier, freeMode)
         this.winBanner.text = `${(win * this.bet).toFixed(2)}  X${multiplier}`
         this.audio.highlight()
-        if (chain > 1) this.audio.multiplier()
+        if (chain > 1) this.audio.multiplier(multiplier)
         this.emitCoins()
       },
       clear: () => this.audio.clear(),

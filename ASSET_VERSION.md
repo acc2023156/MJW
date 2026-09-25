@@ -33,6 +33,7 @@ This directory is an independent copy of `mahjong-fortune-slot`.
 The atlas files are reference captures. Confirm licensing before production distribution.
 # 2026-09-25 音效與發布更新
 
-已改用 `src/game/audioSprites.ts` 的 19 段音效與 21 段語音，不再需要下方舊紀錄提到的 9 個剪輯檔。
-音效按提供的兩張時間表接到遊戲事件；倍率連喊與混合報牌語音保留試聽，等待更細分段。
+已更新 `src/game/audioSprites.ts` 為使用者修訂的 28 段語音；倍率已各自分段。
+使用者確認音效表仍未完成，19 段舊音效範例已在遊戲內停用，只留試聽頁標示為未核實。
+原始主遊戲／免費遊戲背景音樂照常使用。其餘語音事件接線進度以 README.md 為準。
 正式網址使用 `/MJW/`；原本本地開發路徑保持不變。詳細限制與試聽網址見 README.md。

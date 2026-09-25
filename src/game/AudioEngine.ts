@@ -5,6 +5,8 @@ import { soundSprites, voiceSprites, type SoundName, type VoiceName } from './au
 type Bank = 'general_audio' | 'vox'
 
 export class AudioEngine {
+  private readonly auditionUnverifiedSounds: boolean
+  constructor(auditionUnverifiedSounds = false) { this.auditionUnverifiedSounds = auditionUnverifiedSounds }
   private music?: HTMLAudioElement
   private context?: AudioContext
   private buffers = new Map<Bank, Promise<AudioBuffer>>()
@@ -62,7 +64,10 @@ export class AudioEngine {
     } catch (error) { console.error('Audio sprite playback failed', error) }
   }
 
-  sound(name: SoundName) { void this.segment('general_audio', soundSprites[name]) }
+  sound(name: SoundName) {
+    // User confirmed the SFX table is not finished. Never use example offsets in gameplay.
+    if (this.auditionUnverifiedSounds) void this.segment('general_audio', soundSprites[name])
+  }
   voice(name: VoiceName) { void this.segment('vox', voiceSprites[name], true) }
   spin() { this.sound('reel_spin') }
   settle(scatter = false, last = false) {
@@ -72,7 +77,11 @@ export class AudioEngine {
   highlight() { this.sound('win_fanfare') }
   clear() { this.sound('symbol_elimination') }
   drop() { this.sound('whoosh') }
-  multiplier() { this.sound('multiplier_up') }
+  multiplier(value: number) {
+    this.sound('multiplier_up')
+    const key = `multiplier_${value}` as VoiceName
+    if (key in voiceSprites) this.voice(key)
+  }
   freeGameTrigger() { this.sound('free_game'); this.voice('hu') }
   win() { this.sound('coin_waterfall') }
   click() { this.sound('ui_click') }

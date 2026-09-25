@@ -2,7 +2,7 @@ import { AudioEngine } from './AudioEngine'
 import { soundSprites, voiceSprites, type SoundName, type VoiceName } from './audioSprites'
 
 export async function showAudioReview() {
-  const audio = new AudioEngine()
+  const audio = new AudioEngine(true)
   const panel = document.createElement('section')
   panel.style.cssText = 'position:fixed;inset:0;z-index:20;overflow:auto;background:#182421;color:white;padding:24px;font:16px system-ui'
   const title = document.createElement('h1')
@@ -13,7 +13,7 @@ export async function showAudioReview() {
   document.body.append(panel)
   try {
     const result = await audio.checkTimelines()
-    status.textContent = `時間範圍驗證通過：general_audio.mp3 ${result.soundDuration.toFixed(3)} 秒；vox.mp3 ${result.voiceDuration.toFixed(3)} 秒。分段內容依提供表格，請點擊試聽確認。`
+    status.textContent = `原檔長度：general_audio.mp3 ${result.soundDuration.toFixed(3)} 秒；vox.mp3 ${result.voiceDuration.toFixed(3)} 秒。語音已更新為新表的 28 段。音效仍是未核實範例，遊戲內已停用，以下僅供試聽；時間未超出原檔不代表用途正確。`
     for (const [bank, table] of [['音效', soundSprites], ['語音', voiceSprites]] as const) {
       const heading = document.createElement('h2'); heading.textContent = bank; panel.append(heading)
       for (const [name, [start, duration]] of Object.entries(table)) {
