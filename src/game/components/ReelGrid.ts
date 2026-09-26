@@ -7,10 +7,11 @@ import {
 
 const VIEW_WIDTH = 425
 const VIEW_HEIGHT = 390
-// The captured tile PNG has transparent edge pixels. Slightly oversizing the
-// sprite compensates for them, leaving a visible seam of about two pixels.
-const TILE_WIDTH = 82
-const TILE_HEIGHT = 92
+// Compensate for transparent pixels in the captured tile PNG. The horizontal
+// faces leave about a one-pixel seam; the taller body lets each lower row
+// overlap the row above by roughly five to six visible pixels.
+const TILE_WIDTH = 83
+const TILE_HEIGHT = 98
 const COLUMN_START = 14
 const COLUMN_STEP = 80
 const ROW_START = 23
