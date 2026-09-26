@@ -21,6 +21,8 @@ export class GameScene extends Container {
   private readonly status = new StatusPanel()
   private readonly controls: SpinControls
   private readonly winBanner: Text
+  private readonly winFx = new Graphics()
+  private winFxToken = 0
   private readonly multiplierLabels: Sprite[] = []
   private readonly ui: UiTextures
   private readonly fxLayer = new Container()
@@ -80,6 +82,14 @@ export class GameScene extends Container {
     winBar.width = 401
     winBar.height = 58
     this.addChild(winBar)
+    this.winFx
+      .roundRect(38, 514, 369, 46, 11).fill({ color: '#ffb51d', alpha: .12 })
+      .roundRect(39, 515, 367, 44, 10).stroke({ color: '#ffe36d', width: 4, alpha: .92 })
+      .roundRect(44, 520, 357, 34, 8).stroke({ color: '#fff4b0', width: 2, alpha: .45 })
+    this.winFx.pivot.set(222.5, 537)
+    this.winFx.position.set(222.5, 537)
+    this.winFx.visible = false
+    this.addChild(this.winFx)
     const totalWin = new Sprite(ui.totalWinLabel)
     totalWin.anchor.set(.5); totalWin.position.set(179, 537)
     totalWin.width = 42; totalWin.height = 27; this.addChild(totalWin)
@@ -130,7 +140,7 @@ export class GameScene extends Container {
     this.audio.spin()
     if (!freeMode) this.balance -= this.bet
     this.win = 0
-    this.winBanner.text = freeMode ? `FREE ${this.freeSpinsRemaining}` : '0.00'
+    this.resetWinAmount(freeMode ? `FREE ${this.freeSpinsRemaining}` : '0.00')
     this.controls.setSpinning(true)
     this.updateStatus()
     this.setMultiplier(freeMode ? 2 : 1, freeMode)
@@ -144,7 +154,7 @@ export class GameScene extends Container {
       },
       tumble: (chain, multiplier, win) => {
         this.setMultiplier(multiplier, freeMode)
-        this.winBanner.text = `${(win * this.bet).toFixed(2)}  X${multiplier}`
+        this.showWinAmount(`${(win * this.bet).toFixed(2)}  X${multiplier}`)
         this.audio.highlight()
         if (chain > 1) this.audio.multiplier(multiplier)
         this.emitCoins()
@@ -155,7 +165,8 @@ export class GameScene extends Container {
         this.win = totalWin * this.bet
         this.balance += this.win
         if (freeMode) this.freeGameWin += this.win
-        this.winBanner.text = this.win.toFixed(2)
+        if (this.win > 0) this.showWinAmount(this.win.toFixed(2))
+        else this.resetWinAmount('0.00')
         if (this.win > 0) this.audio.win()
         this.controls.setSpinning(false)
         this.spinning = false
@@ -200,6 +211,47 @@ export class GameScene extends Container {
       const height = index === active ? 47 : 37
       label.scale.set(height / label.texture.height)
     })
+  }
+
+  private resetWinAmount(text: string) {
+    this.winFxToken++
+    this.winFx.visible = false
+    this.winBanner.text = text
+    this.winBanner.alpha = 1
+    this.winBanner.scale.set(1)
+    this.winBanner.position.set(270, 538)
+  }
+
+  private showWinAmount(text: string) {
+    const token = ++this.winFxToken
+    const start = performance.now()
+    this.winBanner.text = text
+    this.winBanner.alpha = 0
+    this.winBanner.scale.set(.62)
+    this.winBanner.position.set(270, 543)
+    this.winFx.visible = true
+    this.winFx.alpha = 0
+    this.winFx.scale.set(.8)
+    const animate = () => {
+      if (token !== this.winFxToken) return
+      const progress = Math.min(1, (performance.now() - start) / 430)
+      const arrival = 1 - Math.pow(1 - Math.min(1, progress / .58), 3)
+      const settle = progress < .58 ? 0 : (progress - .58) / .42
+      const scale = progress < .58 ? .62 + arrival * .54 : 1.16 - settle * .16
+      this.winBanner.alpha = Math.min(1, progress * 5)
+      this.winBanner.scale.set(scale)
+      this.winBanner.y = 543 - arrival * 5
+      this.winFx.alpha = Math.sin(progress * Math.PI) * .9
+      this.winFx.scale.set(.8 + arrival * .26)
+      if (progress < 1) requestAnimationFrame(animate)
+      else {
+        this.winBanner.alpha = 1
+        this.winBanner.scale.set(1)
+        this.winBanner.y = 538
+        this.winFx.visible = false
+      }
+    }
+    requestAnimationFrame(animate)
   }
 
   private startFreeGame() {

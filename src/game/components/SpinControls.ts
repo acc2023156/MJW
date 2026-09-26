@@ -12,25 +12,49 @@ export type SpinActions = {
 export class SpinControls extends Container {
   private readonly spinButton: Container
   private readonly spinGlyph: Sprite
+  private readonly spinFx: Graphics
   private readonly turboIcon: Sprite
   private readonly autoIcon: Sprite
   private isSpinning = false
+  private spinStarted = 0
 
   constructor(actions: SpinActions, ui: UiTextures) {
     super()
     this.addChild(new Graphics().rect(0, 0, 445, 4).fill({ color: '#4d2417', alpha: .75 }))
     this.turboIcon = this.iconButton(ui.controls.turbo, 49, 63, 21, 23, actions.toggleTurbo)
     this.iconButton(ui.controls.minus, 121, 63, 18, 3, actions.decreaseBet)
+    this.spinFx = new Graphics()
+      .circle(0, 0, 51).stroke({ color: '#ffe66d', width: 5, alpha: .9 })
+      .circle(0, 0, 45).stroke({ color: '#fff6b7', width: 2, alpha: .65 })
+      .moveTo(-61, 0).lineTo(-52, 0).moveTo(61, 0).lineTo(52, 0)
+      .moveTo(0, -61).lineTo(0, -52).moveTo(0, 61).lineTo(0, 52)
+      .stroke({ color: '#ffd22e', width: 4, alpha: .8 })
+    this.spinFx.position.set(222.5, 58)
+    this.spinFx.visible = false
+    this.addChild(this.spinFx)
     this.spinButton = this.makeSpin(actions.spin, ui.spinButton, ui.spinArrows)
     this.iconButton(ui.controls.plus, 324, 63, 20, 20, actions.increaseBet)
     this.autoIcon = this.iconButton(ui.controls.auto, 396, 63, 23, 23, actions.toggleAuto)
     this.spinGlyph = this.spinButton.children[1] as Sprite
 
-    const rotateIdle = () => {
-      if (this.isSpinning) this.spinGlyph.rotation += 0.08
-      requestAnimationFrame(rotateIdle)
+    const animateSpin = () => {
+      if (this.isSpinning) {
+        const elapsed = performance.now() - this.spinStarted
+        const launch = Math.min(1, elapsed / 360)
+        this.spinGlyph.rotation += .075 + launch * .075
+        this.spinFx.visible = true
+        this.spinFx.rotation -= .035
+        if (launch < 1) {
+          this.spinFx.alpha = (1 - launch) * .95
+          this.spinFx.scale.set(.72 + launch * .58)
+        } else {
+          this.spinFx.alpha = .2 + Math.sin(elapsed / 110) * .08
+          this.spinFx.scale.set(1.03 + Math.sin(elapsed / 150) * .025)
+        }
+      }
+      requestAnimationFrame(animateSpin)
     }
-    requestAnimationFrame(rotateIdle)
+    requestAnimationFrame(animateSpin)
   }
 
   private iconButton(texture: Texture, x: number, y: number, width: number, height: number, action: () => void) {
@@ -75,8 +99,12 @@ export class SpinControls extends Container {
 
   setSpinning(active: boolean) {
     this.isSpinning = active
-    this.spinButton.alpha = active ? .65 : 1
+    this.spinButton.alpha = 1
     this.spinGlyph.rotation = 0
+    this.spinStarted = performance.now()
+    this.spinFx.visible = active
+    this.spinFx.alpha = active ? 1 : 0
+    this.spinFx.scale.set(active ? .72 : 1)
   }
 
   setTurbo(active: boolean) { this.turboIcon.tint = active ? '#fff08a' : '#ffffff' }

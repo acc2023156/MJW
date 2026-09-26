@@ -14,12 +14,22 @@ const TILE_WIDTH = 83
 const TILE_HEIGHT = 98
 const COLUMN_START = 14
 const COLUMN_STEP = 80
-const ROW_START = 23
+// Lift the visible stack seven pixels so the bottom row leaves the same slim
+// strip of background above the WIN rail as the reference capture.
+const ROW_START = 16
 const ROW_STEP = 90
 const REEL_TILE_COUNT = REEL_ROWS + 2
 const REEL_SPAN = REEL_TILE_COUNT * ROW_STEP
 
-type Tile = { container: Container; icon: Sprite; body: Sprite; wildLabel: Sprite }
+type Tile = {
+  container: Container
+  icon: Sprite
+  body: Sprite
+  wildLabel: Sprite
+  scatterFx: Graphics
+  value: SymbolId
+  scatterStarted: number
+}
 
 export type ReelSpinCallbacks = {
   freeMode: boolean
@@ -85,6 +95,7 @@ export class ReelGrid extends Container {
     this.shade.visible = false
     this.beam.visible = false
     tileLayer.addChild(this.winGlow, this.shade, this.beam)
+    this.animateTileEffects()
   }
 
   private createTile(value: SymbolId, x: number, y: number): Tile {
@@ -94,6 +105,13 @@ export class ReelGrid extends Container {
     body.width = TILE_WIDTH
     body.height = TILE_HEIGHT
     container.addChild(body)
+    const scatterFx = new Graphics()
+      .ellipse(0, 0, 35, 10).fill({ color: '#ff7b18', alpha: .5 })
+      .ellipse(0, -4, 27, 8).fill({ color: '#ffd83e', alpha: .7 })
+      .circle(0, -9, 18).fill({ color: '#fff09a', alpha: .22 })
+    scatterFx.position.set(TILE_WIDTH / 2, TILE_HEIGHT - 11)
+    scatterFx.visible = false
+    container.addChild(scatterFx)
     const icon = new Sprite(this.symbolTextures[value])
     icon.anchor.set(.5)
     icon.position.set(TILE_WIDTH / 2, TILE_HEIGHT / 2)
@@ -103,7 +121,10 @@ export class ReelGrid extends Container {
     wildLabel.width = 78
     wildLabel.height = 42
     container.addChild(icon, wildLabel)
-    const tile = { container, icon, body, wildLabel }
+    const tile: Tile = {
+      container, icon, body, wildLabel, scatterFx, value,
+      scatterStarted: value === '胡' ? performance.now() : 0,
+    }
     this.setTile(tile, value)
     return tile
   }
@@ -129,11 +150,32 @@ export class ReelGrid extends Container {
   }
 
   private setTile(tile: Tile, value: SymbolId) {
+    if (value === '胡' && tile.value !== '胡') tile.scatterStarted = performance.now()
+    tile.value = value
     tile.icon.texture = this.symbolTextures[value]
     tile.body.visible = value !== '百搭' && value !== '胡'
     tile.wildLabel.visible = value === '百搭'
+    tile.scatterFx.visible = value === '胡'
     tile.icon.position.set(TILE_WIDTH / 2, value === '百搭' ? 66 : TILE_HEIGHT / 2 - 3)
     this.fitSymbol(tile.icon, value)
+  }
+
+  private animateTileEffects() {
+    const frame = () => {
+      const now = performance.now()
+      const tiles = [...this.previewCells, ...this.cells.flat()]
+      for (const tile of tiles) {
+        if (!tile.scatterFx.visible) continue
+        const arrival = Math.min(1, (now - tile.scatterStarted) / 260)
+        const eased = 1 - Math.pow(1 - arrival, 3)
+        const pulse = .96 + Math.sin(now / 115) * .08
+        tile.scatterFx.alpha = (.62 + Math.sin(now / 92) * .16) * arrival
+        tile.scatterFx.scale.set((.42 + eased * .58) * pulse, (.5 + eased * .5) * pulse)
+        tile.scatterFx.rotation = Math.sin(now / 180) * .05
+      }
+      requestAnimationFrame(frame)
+    }
+    requestAnimationFrame(frame)
   }
 
   private fitSymbol(icon: Sprite, value: SymbolId) {
