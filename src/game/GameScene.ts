@@ -116,8 +116,12 @@ export class GameScene extends Container {
 
   private spin() {
     if (this.modalLayer.children.length > 0) return
+    if (this.spinning) {
+      this.reels.quickStop()
+      return
+    }
     const freeMode = this.freeSpinsRemaining > 0
-    if (this.spinning || (!freeMode && this.balance < this.bet)) {
+    if (!freeMode && this.balance < this.bet) {
       if (this.balance < this.bet) this.winBanner.text = 'LOW BALANCE'
       return
     }
@@ -132,6 +136,7 @@ export class GameScene extends Container {
     this.setMultiplier(freeMode ? 2 : 1, freeMode)
     this.reels.spin({
       freeMode,
+      turbo: this.turbo,
       settle: (scatter, last) => this.audio.settle(scatter, last),
       anticipation: (active) => {
         this.audio.anticipation(active)

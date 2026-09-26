@@ -7,17 +7,22 @@ import {
 
 const VIEW_WIDTH = 425
 const VIEW_HEIGHT = 390
-const TILE_WIDTH = 78
-const TILE_HEIGHT = 90
+// The captured tile PNG has transparent edge pixels. Slightly oversizing the
+// sprite compensates for them, leaving a visible seam of about two pixels.
+const TILE_WIDTH = 82
+const TILE_HEIGHT = 92
 const COLUMN_START = 14
 const COLUMN_STEP = 80
 const ROW_START = 23
 const ROW_STEP = 90
+const REEL_TILE_COUNT = REEL_ROWS + 2
+const REEL_SPAN = REEL_TILE_COUNT * ROW_STEP
 
 type Tile = { container: Container; icon: Sprite; body: Sprite; wildLabel: Sprite }
 
 export type ReelSpinCallbacks = {
   freeMode: boolean
+  turbo: boolean
   settle: (scatter: boolean, last: boolean) => void
   anticipation: (active: boolean) => void
   tumble: (chain: number, multiplier: number, win: number) => void
@@ -30,11 +35,13 @@ export class ReelGrid extends Container {
   private readonly cells: Tile[][] = []
   private readonly previewCells: Tile[] = []
   private readonly symbols: SymbolId[][] = []
+  private readonly winGlow = new Graphics()
   private readonly shade = new Graphics()
   private readonly beam = new Graphics()
   private readonly symbolTextures: Record<SymbolId, Texture>
   private readonly art: SymbolArt
   private running = false
+  private quickStopRequested = false
 
   constructor(art: SymbolArt, reelFrame: Texture) {
     super()
@@ -76,7 +83,7 @@ export class ReelGrid extends Container {
 
     this.shade.visible = false
     this.beam.visible = false
-    tileLayer.addChild(this.shade, this.beam)
+    tileLayer.addChild(this.winGlow, this.shade, this.beam)
   }
 
   private createTile(value: SymbolId, x: number, y: number): Tile {
@@ -100,6 +107,21 @@ export class ReelGrid extends Container {
     return tile
   }
 
+  quickStop() {
+    if (this.running) this.quickStopRequested = true
+  }
+
+  private baseX(col: number) { return COLUMN_START + col * COLUMN_STEP }
+  private baseY(row: number) { return ROW_START + row * ROW_STEP }
+
+  private columnTiles(col: number) {
+    return [
+      this.previewCells[col],
+      ...Array.from({ length: REEL_ROWS }, (_, row) => this.cells[row][col]),
+      this.previewCells[REEL_COLUMNS + col],
+    ]
+  }
+
   private setSymbol(row: number, col: number, value: SymbolId) {
     this.symbols[row][col] = value
     this.setTile(this.cells[row][col], value)
@@ -109,7 +131,7 @@ export class ReelGrid extends Container {
     tile.icon.texture = this.symbolTextures[value]
     tile.body.visible = value !== '百搭' && value !== '胡'
     tile.wildLabel.visible = value === '百搭'
-    tile.icon.position.set(TILE_WIDTH / 2, value === '百搭' ? 65 : TILE_HEIGHT / 2 - 3)
+    tile.icon.position.set(TILE_WIDTH / 2, value === '百搭' ? 66 : TILE_HEIGHT / 2 - 3)
     this.fitSymbol(tile.icon, value)
   }
 
@@ -134,27 +156,79 @@ export class ReelGrid extends Container {
   spin(callbacks: ReelSpinCallbacks) {
     if (this.running) return
     this.running = true
+    this.quickStopRequested = false
     const outcome = this.makeOutcome(!callbacks.freeMode && Math.random() < .055)
-    const anticipation = this.countScatters(outcome, 3) >= 2
-    const stopTimes = anticipation ? [620, 790, 960, 2600, 4300] : [620, 775, 930, 1085, 1240]
+    const anticipation = !callbacks.turbo && this.countScatters(outcome, 3) >= 2
+    const stopTimes = callbacks.turbo
+      ? [430, 430, 430, 430, 430]
+      : anticipation ? [780, 870, 960, 2500, 4200] : [780, 870, 960, 1050, 1140]
     const start = performance.now()
-    let lastShuffle = 0
+    let lastFrame = start
     let anticipationStarted = false
-    const settled = Array.from({ length: REEL_COLUMNS }, () => false)
-    const animate = () => {
-      const elapsed = performance.now() - start
-      if (elapsed - lastShuffle > 52) {
-        lastShuffle = elapsed
-        for (let col = 0; col < REEL_COLUMNS; col++) for (let row = 0; row < REEL_ROWS; row++) {
-          this.setSymbol(row, col, elapsed < stopTimes[col] ? randomSymbol() : outcome[row][col])
-        }
-        this.previewCells.forEach(tile => this.setTile(tile, randomSymbol()))
+    const phases = Array.from({ length: REEL_COLUMNS }, () => 0) // 0 spin, 1 settle, 2 stopped
+    const settleStarts = Array.from({ length: REEL_COLUMNS }, () => 0)
+    const offsets = Array.from({ length: REEL_COLUMNS }, () => 0)
+    const lastCycles = Array.from({ length: REEL_COLUMNS }, () => 0)
+
+    const settleColumn = (col: number) => {
+      if (phases[col] !== 0) return
+      phases[col] = 1
+      settleStarts[col] = performance.now()
+      for (let row = 0; row < REEL_ROWS; row++) {
+        this.setSymbol(row, col, outcome[row][col])
+        this.cells[row][col].container.position.set(this.baseX(col), this.baseY(row) - 7)
+        this.cells[row][col].container.alpha = 1
       }
+      const columnTiles = this.columnTiles(col)
+      this.setTile(columnTiles[0], randomSymbol())
+      this.setTile(columnTiles[REEL_TILE_COUNT - 1], randomSymbol())
+      columnTiles[0].container.position.set(this.baseX(col), this.baseY(-1) - 7)
+      columnTiles[REEL_TILE_COUNT - 1].container.position.set(this.baseX(col), this.baseY(REEL_ROWS) - 7)
+      callbacks.settle(outcome.some(row => row[col] === '胡'), col === REEL_COLUMNS - 1)
+    }
+
+    const animate = () => {
+      const now = performance.now()
+      const elapsed = now - start
+      const delta = Math.min(34, now - lastFrame)
+      lastFrame = now
+      const forceStop = this.quickStopRequested
+
       for (let col = 0; col < REEL_COLUMNS; col++) {
-        if (!settled[col] && elapsed >= stopTimes[col]) {
-          settled[col] = true
-          for (let row = 0; row < REEL_ROWS; row++) this.setSymbol(row, col, outcome[row][col])
-          callbacks.settle(outcome.some(row => row[col] === '胡'), col === REEL_COLUMNS - 1)
+        if (phases[col] === 0 && (forceStop || elapsed >= stopTimes[col])) settleColumn(col)
+        if (phases[col] === 0) {
+          const acceleration = Math.min(1, elapsed / (callbacks.turbo ? 70 : 150))
+          const remaining = stopTimes[col] - elapsed
+          const braking = remaining < 220 ? .32 + .68 * Math.max(0, remaining / 220) : 1
+          offsets[col] += delta * (callbacks.turbo ? 2.45 : 1.72) * acceleration * braking
+          const cycle = Math.floor(offsets[col] / ROW_STEP)
+          const columnTiles = this.columnTiles(col)
+          while (lastCycles[col] < cycle) {
+            lastCycles[col]++
+            const wrappedIndex = (REEL_TILE_COUNT - (lastCycles[col] % REEL_TILE_COUNT)) % REEL_TILE_COUNT
+            this.setTile(columnTiles[wrappedIndex], randomSymbol())
+          }
+          for (let index = 0; index < REEL_TILE_COUNT; index++) {
+            const tile = columnTiles[index]
+            tile.container.y = this.baseY(-1) + ((index * ROW_STEP + offsets[col]) % REEL_SPAN)
+            tile.container.alpha = .9
+          }
+        } else if (phases[col] === 1) {
+          const progress = Math.min(1, (now - settleStarts[col]) / (callbacks.turbo ? 70 : 115))
+          const c1 = 1.35
+          const c3 = c1 + 1
+          const eased = 1 + c3 * Math.pow(progress - 1, 3) + c1 * Math.pow(progress - 1, 2)
+          const columnTiles = this.columnTiles(col)
+          for (let index = 0; index < REEL_TILE_COUNT; index++) {
+            columnTiles[index].container.y = this.baseY(index - 1) - 7 + 7 * eased
+          }
+          if (progress >= 1) {
+            phases[col] = 2
+            for (let index = 0; index < REEL_TILE_COUNT; index++) {
+              columnTiles[index].container.position.set(this.baseX(col), this.baseY(index - 1))
+              columnTiles[index].container.alpha = 1
+            }
+          }
         }
       }
       if (anticipation && !anticipationStarted && elapsed >= stopTimes[2]) {
@@ -163,7 +237,7 @@ export class ReelGrid extends Container {
         this.showAnticipation(3)
       }
       if (anticipation && elapsed >= stopTimes[3]) this.showAnticipation(4)
-      if (elapsed < stopTimes[4] + 120) return requestAnimationFrame(animate)
+      if (!phases.every(phase => phase === 2)) return requestAnimationFrame(animate)
       this.hideAnticipation()
       callbacks.anticipation(false)
       void this.runTumbles(callbacks)
@@ -219,28 +293,40 @@ export class ReelGrid extends Container {
   private async runTumbles(callbacks: ReelSpinCallbacks) {
     let total = 0
     const multipliers = callbacks.freeMode ? FREE_TUMBLE_MULTIPLIERS : TUMBLE_MULTIPLIERS
-    for (let tumble = 0; tumble < multipliers.length; tumble++) {
+    let tumble = 0
+    while (tumble < 100) {
       const result = this.evaluateWays()
       if (!result.wins.size) break
       const multiplier = multipliers[Math.min(tumble, multipliers.length - 1)]
       total += result.payout * multiplier
       callbacks.tumble(tumble + 1, multiplier, result.payout * multiplier)
       await this.animateWin(result.wins, callbacks.clear)
+      await this.pause(callbacks.turbo ? 25 : 110)
+      const dropStarts = Array.from({ length: REEL_ROWS }, (_, row) =>
+        Array.from({ length: REEL_COLUMNS }, () => this.baseY(row)))
       for (let col = 0; col < REEL_COLUMNS; col++) {
-        const survivors: SymbolId[] = []
-        for (let row = REEL_ROWS - 1; row >= 0; row--) if (!result.wins.has(`${row}:${col}`)) survivors.unshift(this.symbols[row][col])
-        const next = [...Array.from({ length: REEL_ROWS - survivors.length }, randomSymbol), ...survivors]
+        const survivorRows: number[] = []
+        for (let row = 0; row < REEL_ROWS; row++) if (!result.wins.has(`${row}:${col}`)) survivorRows.push(row)
+        const newCount = REEL_ROWS - survivorRows.length
+        const survivors = survivorRows.map(row => this.symbols[row][col])
+        const next = [...Array.from({ length: newCount }, randomSymbol), ...survivors]
         for (let row = 0; row < REEL_ROWS; row++) {
           const tile = this.cells[row][col]
           this.setSymbol(row, col, next[row])
-          tile.container.y = ROW_START + row * ROW_STEP - 48 - row * 8
-          tile.container.alpha = 0
+          const sourceY = row < newCount
+            ? this.baseY(row) - newCount * ROW_STEP
+            : this.baseY(survivorRows[row - newCount])
+          dropStarts[row][col] = sourceY
+          tile.container.position.set(this.baseX(col), sourceY)
+          tile.container.alpha = 1
         }
       }
       this.previewCells.forEach(tile => this.setTile(tile, randomSymbol()))
       callbacks.drop()
-      await this.animateDrop()
+      await this.animateDrop(dropStarts, callbacks.turbo)
+      tumble++
     }
+    if (tumble >= 100) console.warn('Cascade safety guard reached; stopping a likely malformed outcome.')
     this.running = false
     callbacks.complete(total, this.countScatters())
   }
@@ -252,37 +338,46 @@ export class ReelGrid extends Container {
       const frame = () => {
         const progress = Math.min(1, (performance.now() - start) / 650)
         if (!clearing && progress >= .72) { clearing = true; onClear() }
+        this.winGlow.clear()
         for (const row of this.cells) for (const tile of row) tile.container.alpha = .28
         wins.forEach((key) => {
           const [row, col] = key.split(':').map(Number)
           const tile = this.cells[row][col]
           tile.container.alpha = 1 - Math.max(0, progress - .72) / .28
           this.fitSymbol(tile.icon, this.symbols[row][col])
-          tile.icon.scale.set(tile.icon.scale.x * (1 + Math.sin(progress * Math.PI * 2) * .11))
+          const glowAlpha = (.58 + Math.sin(progress * Math.PI * 4) * .22) * Math.min(1, (1 - progress) * 5)
+          this.winGlow.roundRect(this.baseX(col) - 1, this.baseY(row) - 1, TILE_WIDTH + 2, TILE_HEIGHT + 1, 8)
+            .stroke({ color: '#ffe15a', width: 3, alpha: glowAlpha })
         })
-        if (progress < 1) requestAnimationFrame(frame); else resolve()
+        if (progress < 1) requestAnimationFrame(frame)
+        else { this.winGlow.clear(); resolve() }
       }
       requestAnimationFrame(frame)
     })
   }
 
-  private animateDrop() {
+  private animateDrop(starts: number[][], turbo: boolean) {
+    const duration = turbo ? 140 : 390
     const start = performance.now()
     return new Promise<void>((resolve) => {
       const frame = () => {
-        const progress = Math.min(1, (performance.now() - start) / 420)
-        const eased = 1 - Math.pow(1 - progress, 3)
+        const elapsed = performance.now() - start
+        let finished = true
         for (let row = 0; row < REEL_ROWS; row++) for (let col = 0; col < REEL_COLUMNS; col++) {
           const tile = this.cells[row][col]
-          const targetY = ROW_START + row * ROW_STEP
-          tile.container.alpha = eased
-          tile.container.y += (targetY - tile.container.y) * Math.min(1, eased * .42 + .12)
+          const targetY = this.baseY(row)
+          const distance = Math.max(0, Math.round((targetY - starts[row][col]) / ROW_STEP))
+          const delay = turbo || distance === 0 ? 0 : col * 14 + Math.max(0, 4 - distance) * 12
+          const progress = Math.max(0, Math.min(1, (elapsed - delay) / duration))
+          if (progress < 1) finished = false
+          const eased = 1 - Math.pow(1 - progress, 3)
+          tile.container.y = starts[row][col] + (targetY - starts[row][col]) * eased
         }
-        if (progress < 1) requestAnimationFrame(frame)
+        if (!finished) requestAnimationFrame(frame)
         else {
           for (let row = 0; row < REEL_ROWS; row++) for (let col = 0; col < REEL_COLUMNS; col++) {
             const tile = this.cells[row][col]
-            tile.container.y = ROW_START + row * ROW_STEP
+            tile.container.y = this.baseY(row)
             tile.container.alpha = 1
             this.fitSymbol(tile.icon, this.symbols[row][col])
           }
@@ -291,5 +386,9 @@ export class ReelGrid extends Container {
       }
       requestAnimationFrame(frame)
     })
+  }
+
+  private pause(duration: number) {
+    return new Promise<void>((resolve) => window.setTimeout(resolve, duration))
   }
 }
