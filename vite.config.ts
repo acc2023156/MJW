@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 
-export default defineConfig(({ command }) => ({
-  base: command === 'build' ? '/MJW/' : '/mahjong-fortune-slot-pg-assets/',
-}))
+// Deployed to GitHub Pages at /MJW/ (linked from the Boss88VIP lobby).
+export default defineConfig({
+  base: '/MJW/',
+})

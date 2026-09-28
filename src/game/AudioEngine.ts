@@ -1,110 +1,120 @@
-import { pgsoftAsset } from './pgsoftAssets'
-
 import { soundSprites, voiceSprites, type SoundName, type VoiceName } from './audioSprites'
 
 type Bank = 'general_audio' | 'vox'
 
-export class AudioEngine {
-  private readonly auditionUnverifiedSounds: boolean
-  constructor(auditionUnverifiedSounds = false) { this.auditionUnverifiedSounds = auditionUnverifiedSounds }
-  private music?: HTMLAudioElement
-  private context?: AudioContext
-  private buffers = new Map<Bank, Promise<AudioBuffer>>()
-  private activeVoice?: AudioBufferSourceNode
+const audioUrl = (file: string) => `${import.meta.env.BASE_URL}assets/pgsoft-reference/audio/audio/mp3/${file}`
 
-  private load(bank: Bank): Promise<AudioBuffer> {
+/** Minimum gap between repeats of one cue; the reference plays one landing cue per settle. */
+const THROTTLE_MS: Partial<Record<SoundName, number>> = { tilesLand: 700, reelStop: 70 }
+
+/**
+ * Plays the original audio sprites (general_audio.mp3 / vox.mp3) via Web Audio and the
+ * original music loops via <audio>. See audioSprites.ts for the verified event mapping.
+ */
+export class AudioEngine {
+  private context?: AudioContext
+  private music?: HTMLAudioElement
+  private readonly buffers = new Map<Bank, Promise<AudioBuffer>>()
+  private activeVoice?: AudioBufferSourceNode
+  private readonly looping = new Map<SoundName, AudioBufferSourceNode>()
+  private readonly lastPlayed = new Map<SoundName, number>()
+
+  private getContext() {
     this.context ??= new AudioContext()
+    if (this.context.state === 'suspended') void this.context.resume()
+    return this.context
+  }
+
+  private load(bank: Bank) {
+    const context = this.getContext()
     let pending = this.buffers.get(bank)
     if (!pending) {
-      const context = this.context
-      pending = fetch(pgsoftAsset(`audio/audio/mp3/${bank}.mp3`))
-        .then(response => {
+      pending = fetch(audioUrl(`${bank}.mp3`))
+        .then((response) => {
           if (!response.ok) throw new Error(`Audio ${bank}: HTTP ${response.status}`)
           return response.arrayBuffer()
         })
-        .then(bytes => context.decodeAudioData(bytes))
-        .then(buffer => {
-          const table = bank === 'vox' ? voiceSprites : soundSprites
-          for (const [name, [start, duration]] of Object.entries(table)) {
-            if ((start + duration) / 1000 > buffer.duration + .03)
-              throw new Error(`Audio timeline exceeds ${bank} duration: ${name}`)
-          }
-          return buffer
-        })
+        .then((bytes) => context.decodeAudioData(bytes))
       this.buffers.set(bank, pending)
-      void pending.catch(error => { this.buffers.delete(bank); console.error(error) })
+      pending.catch((error) => { this.buffers.delete(bank); console.error(error) })
     }
     return pending
   }
 
-  async checkTimelines() {
-    const [sound, voice] = await Promise.all([this.load('general_audio'), this.load('vox')])
-    return { soundDuration: sound.duration, voiceDuration: voice.duration }
-  }
-
-  private async segment(bank: Bank, range: readonly [number, number], voice = false) {
+  private async play(bank: Bank, [offset, duration]: readonly [number, number], options: { volume?: number; voice?: boolean; key?: SoundName } = {}) {
     const requested = performance.now()
     try {
-      const pending = this.load(bank)
-      await this.context!.resume()
-      const buffer = await pending
-      // Do not play stale effects after a slow download or a suspended tab.
-      if (performance.now() - requested > 750) return
-      const source = this.context!.createBufferSource()
-      const gain = this.context!.createGain()
+      const buffer = await this.load(bank)
+      // Never play a stale cue after a slow first download.
+      if (performance.now() - requested > 600) return
+      const context = this.getContext()
+      const source = context.createBufferSource()
+      const gain = context.createGain()
       source.buffer = buffer
-      gain.gain.value = voice ? .8 : .65
-      source.connect(gain).connect(this.context!.destination)
-      if (voice) { this.activeVoice?.stop(); this.activeVoice = source }
+      gain.gain.value = options.volume ?? .7
+      source.connect(gain).connect(context.destination)
+      if (options.voice) { this.activeVoice?.stop(); this.activeVoice = source }
+      if (options.key) { this.looping.get(options.key)?.stop(); this.looping.set(options.key, source) }
       source.onended = () => {
         source.disconnect(); gain.disconnect()
         if (this.activeVoice === source) this.activeVoice = undefined
+        if (options.key && this.looping.get(options.key) === source) this.looping.delete(options.key)
       }
-      source.start(0, range[0] / 1000, range[1] / 1000)
-    } catch (error) { console.error('Audio sprite playback failed', error) }
+      source.start(0, offset / 1000, duration / 1000)
+    } catch (error) {
+      console.error('Audio sprite playback failed', error)
+    }
   }
 
-  sound(name: SoundName) {
-    // User confirmed the SFX table is not finished. Never use example offsets in gameplay.
-    if (this.auditionUnverifiedSounds) void this.segment('general_audio', soundSprites[name])
+  sound(name: SoundName, volume?: number) {
+    // Cues fired by several reels in the same moment (stops, landings) play once, not stacked.
+    const now = performance.now()
+    if (now - (this.lastPlayed.get(name) ?? -Infinity) < (THROTTLE_MS[name] ?? 60)) return
+    this.lastPlayed.set(name, now)
+    void this.play('general_audio', soundSprites[name], { volume })
   }
-  voice(name: VoiceName) { void this.segment('vox', voiceSprites[name], true) }
-  spin() { this.sound('reel_spin') }
-  settle(scatter = false, last = false) {
-    this.sound(last ? 'reel_stop_heavy' : 'reel_stop_normal')
-    if (scatter) this.sound('scatter_land')
-  }
-  highlight() { this.sound('win_fanfare') }
-  clear() { this.sound('symbol_elimination') }
-  drop() { this.sound('whoosh') }
+  /** A cue that can be cut short later with stop(name), e.g. the Big Win bed. */
+  held(name: SoundName, volume?: number) { void this.play('general_audio', soundSprites[name], { volume, key: name }) }
+  stop(name: SoundName) { this.looping.get(name)?.stop() }
+  voice(name: VoiceName) { void this.play('vox', voiceSprites[name], { volume: .85, voice: true }) }
+
+  /** Decode both banks early (after the first user gesture) so the first cues are not dropped. */
+  warmUp() { void this.load('general_audio'); void this.load('vox') }
+
+  // --- game events -------------------------------------------------------------------------
+  spin() { this.sound('spinButton'); this.sound('reelSpin', .5) }
+  button() { this.sound('button') }
+  reelStop(_col: number) { this.sound('reelStop') }
+  settle() { this.sound('tilesLand') }
+  scatter(_col: number) { this.sound('scatterLand') }
+  anticipation(active: boolean) { if (active) this.sound('drumRoll') }
+  /** Winners light up column by column; the original cue starts with the first column. */
+  highlight(col: number) { if (col === 0) this.sound('winHighlight') }
+  wild() { this.sound('wildTransform') }
+  dropStart() { this.sound('dropStart', .6) }
+  drop() { this.sound('tilesLand', .6) }
+  plaque() { this.sound('winPlaque') }
   multiplier(value: number) {
-    this.sound('multiplier_up')
+    this.sound('multiplierUp')
     const key = `multiplier_${value}` as VoiceName
     if (key in voiceSprites) this.voice(key)
   }
-  freeGameTrigger() { this.sound('free_game'); this.voice('hu') }
-  win() { this.sound('coin_waterfall') }
-  click() { this.sound('ui_click') }
-  toggle() { this.sound('toggle') }
-  collect() { this.sound('collect') }
+  freeGame() { this.voice('hu') }
+  totalWin() { this.sound('coinRoll') }
+  bigWin() { this.held('bigWinMain', .8) }
+  bigWinEnd() { this.stop('bigWinMain'); this.sound('bigWinEnd', .8) }
 
   playMusic(freeMode = false) {
-    void this.checkTimelines().catch(() => undefined)
+    this.warmUp()
     const file = freeMode ? 'bgm_bonus_loop.mp3' : 'bgm_mg.mp3'
-    const url = pgsoftAsset(`audio/audio/mp3/${file}`)
     if (this.music?.src.endsWith(file)) {
       void this.music.play().catch(() => undefined)
       return
     }
     this.music?.pause()
-    this.music = new Audio(url)
+    this.music = new Audio(audioUrl(file))
     this.music.loop = true
     this.music.volume = .22
     void this.music.play().catch(() => undefined)
-  }
-
-  anticipation(active: boolean) {
-    // The table gives a 580ms cue, not a seamless loop.
-    if (active) this.sound('anticipation')
   }
 }

@@ -1,4 +1,4 @@
-const PGSOFT_ASSET_BASE = `${import.meta.env.BASE_URL}assets/pgsoft-reference`;
+const PGSOFT_ASSET_BASE = '/assets/pgsoft-reference';
 
 /**
  * Builds a public URL for an asset listed in
@@ -22,3 +22,4 @@ export const pgsoftAssetCatalog = {
   csv: `${PGSOFT_ASSET_BASE}/asset-name-map.csv`,
   audit: `${PGSOFT_ASSET_BASE}/asset-name-map.md`,
 } as const;
+
